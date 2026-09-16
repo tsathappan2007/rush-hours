@@ -1,23 +1,22 @@
 import { Router } from 'express';
+import {
+  registerStudent,
+  loginStudent,
+  loginStaff,
+  getCurrentUser,
+} from '../controllers/auth.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
 // Student Authentication
-router.post('/student/register', (req, res) => {
-  res.json({ message: 'Auth scaffold: Student registration endpoint' });
-});
+router.post('/student/register', registerStudent);
+router.post('/student/login', loginStudent);
 
-router.post('/student/login', (req, res) => {
-  res.json({ message: 'Auth scaffold: Student login endpoint' });
-});
+// Canteen Staff Authentication (per canteen)
+router.post('/staff/login', loginStaff);
 
-// Canteen Staff Authentication
-router.post('/staff/login', (req, res) => {
-  res.json({ message: 'Auth scaffold: Canteen staff login endpoint' });
-});
-
-router.get('/me', (req, res) => {
-  res.json({ message: 'Auth scaffold: Current session user profile' });
-});
+// Profile check
+router.get('/me', authenticate, getCurrentUser);
 
 export default router;

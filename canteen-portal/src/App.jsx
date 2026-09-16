@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ChefHat,
   ClipboardList,
@@ -11,8 +11,19 @@ import {
   Flame,
   PauseCircle,
   PlayCircle,
-  Users
+  Users,
+  Wifi,
+  WifiOff,
+  CloudUpload,
+  LogOut,
+  Lock,
+  Building,
+  Key
 } from 'lucide-react';
+
+// LocalStorage Keys for Offline Resilience
+const LOCAL_STORAGE_KEY_ORDERS = 'rh_canteen_cached_orders';
+const LOCAL_STORAGE_KEY_QUEUE = 'rh_canteen_pending_sync_queue';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('slots'); // 'slots' | 'verify' | 'orders' | 'stock'
@@ -21,6 +32,213 @@ export default function App() {
   const [errorResult, setErrorResult] = useState(null);
   const [redeemedTokens, setRedeemedTokens] = useState({});
   const [ordersPaused, setOrdersPaused] = useState(false); // One-tap toggle
+
+  // Staff Authentication State (per canteen)
+  const [staffUser, setStaffUser] = useState({
+    fullName: 'Ramesh Kumar',
+    email: 'ramesh.canteen@college.edu',
+    staffCode: 'STF-MAIN-01',
+    role: 'MANAGER',
+    canteenId: 'canteen-uuid-main',
+    canteenName: 'Main Campus Food Court',
+    canteenCode: 'MAIN-FC',
+  });
+  const [showStaffLoginModal, setShowStaffLoginModal] = useState(false);
+  const [staffEmailInput, setStaffEmailInput] = useState('');
+  const [staffPasswordInput, setStaffPasswordInput] = useState('');
+  const [staffCanteenCodeInput, setStaffCanteenCodeInput] = useState('MAIN-FC');
+  const [staffAuthError, setStaffAuthError] = useState('');
+
+  // Network Connectivity & Offline Resilience State
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [pendingSyncQueue, setPendingSyncQueue] = useState(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_KEY_QUEUE);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [lastSyncTime, setLastSyncTime] = useState(new Date().toLocaleTimeString());
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Initial Seed Order List with LocalStorage Cache Fallback
+  const defaultOrders = [
+    {
+      id: 'ord-1',
+      orderNumber: 'RH-2026-002',
+      status: 'CONFIRMED',
+      studentName: 'Sathappan T',
+      rollNumber: '21CS089',
+      slotTime: '12:30 - 12:45 PM',
+      totalAmount: 140.00,
+      graceRemaining: 48,
+      items: [
+        {
+          name: '1x South Indian Executive Thali',
+          price: 140.00,
+          customizations: ['NO ONION', 'EXTRA SPICY'],
+        },
+      ],
+    },
+    {
+      id: 'ord-2',
+      orderNumber: 'RH-2026-003',
+      status: 'PREPARING',
+      studentName: 'Priya R',
+      rollNumber: '21EC045',
+      slotTime: '12:30 - 12:45 PM',
+      totalAmount: 85.00,
+      graceRemaining: 0,
+      items: [
+        {
+          name: '1x Wok Tossed Veg Hakka Noodles',
+          price: 85.00,
+          customizations: ['LESS OIL'],
+        },
+      ],
+    },
+    {
+      id: 'ord-3',
+      orderNumber: 'RH-2026-001',
+      status: 'READY',
+      studentName: 'Hariharan K',
+      rollNumber: '21CS102',
+      slotTime: '12:30 - 12:45 PM',
+      totalAmount: 100.00,
+      otpCode: '7492',
+      pickupTimeLeft: '14m 12s',
+      items: [
+        { name: '1x Wok Tossed Veg Hakka Noodles', price: 65.00 },
+        { name: '1x Crispy Punjabi Samosa (2 pcs)', price: 35.00 },
+      ],
+    },
+    {
+      id: 'ord-4',
+      orderNumber: 'RH-2026-000',
+      status: 'FORFEITED',
+      studentName: 'Vikram N',
+      rollNumber: '21ME032',
+      slotTime: '12:00 - 12:15 PM',
+      totalAmount: 95.00,
+      items: [
+        { name: '1x Chole Bhature Combo (Special Gravy)', price: 95.00 },
+      ],
+    },
+  ];
+
+  const [orders, setOrders] = useState(() => {
+    try {
+      const cached = localStorage.getItem(LOCAL_STORAGE_KEY_ORDERS);
+      return cached ? JSON.parse(cached) : defaultOrders;
+    } catch {
+      return defaultOrders;
+    }
+  });
+
+  // Save orders to local storage whenever they change (Cache last-known order list)
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_ORDERS, JSON.stringify(orders));
+    } catch (e) {
+      console.warn('LocalStorage save failed:', e);
+    }
+  }, [orders]);
+
+  // Persist pending offline queue
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_QUEUE, JSON.stringify(pendingSyncQueue));
+    } catch (e) {
+      console.warn('LocalStorage queue save failed:', e);
+    }
+  }, [pendingSyncQueue]);
+
+  // Listen to Online / Offline events
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      triggerQueueSync();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [pendingSyncQueue]);
+
+  // Sync queued status updates when connection returns
+  const triggerQueueSync = () => {
+    if (pendingSyncQueue.length === 0) return;
+    setIsSyncing(true);
+
+    setTimeout(() => {
+      // Simulate successful server reconciliation for each queued transition
+      setPendingSyncQueue([]);
+      setLastSyncTime(new Date().toLocaleTimeString());
+      setIsSyncing(false);
+    }, 1200);
+  };
+
+  // Staff Order Transition with Offline Queueing Support
+  const handleUpdateOrderStatus = (orderId, newStatus) => {
+    // 1. Update UI optimistically and save in local cache
+    setOrders((prev) =>
+      prev.map((ord) => (ord.id === orderId ? { ...ord, status: newStatus } : ord))
+    );
+
+    // 2. If offline, push to pending queue
+    if (!isOnline) {
+      const syncAction = {
+        id: 'sync_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        orderId,
+        newStatus,
+        queuedAt: new Date().toLocaleTimeString(),
+      };
+      setPendingSyncQueue((prev) => [...prev, syncAction]);
+    } else {
+      setLastSyncTime(new Date().toLocaleTimeString());
+    }
+  };
+
+  // Manual Toggle Simulation of Network (for test / demo)
+  const toggleNetworkSimulation = () => {
+    if (isOnline) {
+      setIsOnline(false);
+    } else {
+      setIsOnline(true);
+      triggerQueueSync();
+    }
+  };
+
+  // Staff Login per Canteen Handler
+  const handleStaffLogin = (e) => {
+    e.preventDefault();
+    setStaffAuthError('');
+    if (!staffEmailInput || !staffPasswordInput) {
+      setStaffAuthError('Please provide email and password');
+      return;
+    }
+    const cCode = staffCanteenCodeInput.trim().toUpperCase();
+    const cName = cCode === 'MAIN-FC' ? 'Main Campus Food Court' : 'North Block Cafe';
+    setStaffUser({
+      fullName: staffEmailInput.split('@')[0],
+      email: staffEmailInput.trim().toLowerCase(),
+      staffCode: cCode === 'MAIN-FC' ? 'STF-MAIN-01' : 'STF-NORTH-01',
+      role: 'MANAGER',
+      canteenId: 'canteen-uuid-' + cCode.toLowerCase(),
+      canteenName: cName,
+      canteenCode: cCode,
+    });
+    setShowStaffLoginModal(false);
+    setStaffEmailInput('');
+    setStaffPasswordInput('');
+  };
 
   // Upcoming Slots with Queue-Load data
   const upcomingSlots = [
@@ -168,8 +386,60 @@ export default function App() {
           </div>
         </div>
 
-        {/* Status Badges & ONE-TAP PAUSE TOGGLE */}
-        <div className="flex items-center space-x-4">
+        {/* Offline Status & Sync Queue & Staff Auth & ONE-TAP PAUSE TOGGLE */}
+        <div className="flex items-center space-x-3">
+          {/* Network Connectivity & Offline Queue Badge */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={toggleNetworkSimulation}
+              title="Click to toggle network simulation (Online / Offline)"
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold border transition ${
+                isOnline
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-rose-100 text-rose-800 border-rose-400 hover:bg-rose-200 animate-pulse'
+              }`}
+            >
+              {isOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-600" /> : <WifiOff className="w-3.5 h-3.5 text-rose-600" />}
+              <span>{isOnline ? 'Online' : 'Offline (Cached)'}</span>
+            </button>
+
+            {pendingSyncQueue.length > 0 && (
+              <button
+                onClick={triggerQueueSync}
+                disabled={!isOnline || isSyncing}
+                title="Click to sync queued actions to server"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-xs"
+              >
+                <CloudUpload className={`w-3.5 h-3.5 text-amber-700 ${isSyncing ? 'animate-bounce' : ''}`} />
+                <span>{isSyncing ? 'Syncing...' : `${pendingSyncQueue.length} Queued`}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Staff User Profile Badge */}
+          {staffUser ? (
+            <div className="flex items-center space-x-2 bg-gray-100 pl-3 pr-1.5 py-1 rounded-xl text-xs border border-gray-200">
+              <div className="text-left leading-tight">
+                <span className="font-bold text-gray-800 block truncate max-w-[120px]">{staffUser.fullName}</span>
+                <span className="text-[10px] text-emerald-700 font-semibold">{staffUser.canteenCode} • {staffUser.role}</span>
+              </div>
+              <button
+                onClick={() => setStaffUser(null)}
+                title="Switch Staff / Canteen"
+                className="p-1 hover:bg-gray-200 rounded-lg text-gray-500 hover:text-gray-800 transition"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowStaffLoginModal(true)}
+              className="text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-xl transition shadow-xs"
+            >
+              Staff Sign In
+            </button>
+          )}
+
           <div className="flex items-center space-x-2">
             {ordersPaused ? (
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
@@ -513,8 +783,32 @@ export default function App() {
                     Order state machine with 2-min student edit/cancellation grace lockout and 20-min ready forfeiture deadline
                   </p>
                 </div>
-                <span className="text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1 rounded-full">Slot: 12:30 - 12:45 PM</span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-400">Cached: {lastSyncTime}</span>
+                  <span className="text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1 rounded-full">Slot: 12:30 - 12:45 PM</span>
+                </div>
               </div>
+
+              {/* OFFLINE NETWORK STATUS BANNER */}
+              {!isOnline && (
+                <div className="bg-amber-500 text-white p-3.5 rounded-2xl flex items-center justify-between shadow-xs">
+                  <div className="flex items-center space-x-2">
+                    <WifiOff className="w-5 h-5 shrink-0" />
+                    <div>
+                      <div className="text-xs font-bold leading-tight">Offline Mode Active — Local Cache Resilient</div>
+                      <div className="text-[11px] text-amber-100">
+                        Kitchen orders are served from local storage. Status transitions will queue and sync automatically when internet returns.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={toggleNetworkSimulation}
+                    className="bg-white text-amber-900 font-bold text-xs px-3 py-1.5 rounded-xl hover:bg-amber-50 transition shrink-0"
+                  >
+                    Simulate Reconnect
+                  </button>
+                </div>
+              )}
 
               {/* Order Card 1: CONFIRMED - Locked by Grace Window */}
               <div className="border-2 border-amber-200 bg-amber-50/40 rounded-2xl p-5 space-y-4 shadow-xs">
@@ -612,10 +906,17 @@ export default function App() {
                 {/* State Machine Action Controls */}
                 <div className="flex items-center justify-between pt-2 border-t border-blue-200">
                   <div className="text-[11px] text-gray-500">
-                    Grace window completed. Moving to READY triggers the 20-minute pickup window timer.
+                    {!isOnline ? (
+                      <span className="text-rose-700 font-bold flex items-center">
+                        <WifiOff className="w-3.5 h-3.5 mr-1" />
+                        Offline mode: action will be queued locally and synced on reconnect.
+                      </span>
+                    ) : (
+                      <span>Grace window completed. Moving to READY triggers the 20-minute pickup window timer.</span>
+                    )}
                   </div>
                   <button
-                    onClick={() => alert("Order marked READY! 20-minute pickup deadline started.")}
+                    onClick={() => handleUpdateOrderStatus('ord-2', 'READY')}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-sm"
                   >
                     Mark Ready for Pickup
@@ -706,6 +1007,121 @@ export default function App() {
           )}
         </main>
       </div>
+      {/* Staff Login Modal */}
+      {showStaffLoginModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 animate-fadeIn space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <ChefHat className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">Staff Canteen Login</h3>
+                  <p className="text-[11px] text-gray-500">Authorized personnel only</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowStaffLoginModal(false);
+                  setStaffAuthError('');
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {staffAuthError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium flex items-center space-x-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{staffAuthError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleStaffLogin} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Select Canteen</label>
+                <div className="relative">
+                  <Building className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                  <select
+                    value={staffCanteenCodeInput}
+                    onChange={(e) => setStaffCanteenCodeInput(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white font-medium text-gray-800"
+                  >
+                    <option value="MAIN-FC">Main Campus Food Court (MAIN-FC)</option>
+                    <option value="NORTH-CAN">North Block Cafe (NORTH-CAN)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Staff Email</label>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                  <input
+                    type="email"
+                    required
+                    value={staffEmailInput}
+                    onChange={(e) => setStaffEmailInput(e.target.value)}
+                    placeholder="ramesh.canteen@college.edu"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                  <input
+                    type="password"
+                    required
+                    value={staffPasswordInput}
+                    onChange={(e) => setStaffPasswordInput(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-md"
+                >
+                  Access Canteen Portal
+                </button>
+              </div>
+
+              <div className="text-center space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStaffEmailInput('ramesh.canteen@college.edu');
+                    setStaffPasswordInput('staff123');
+                    setStaffCanteenCodeInput('MAIN-FC');
+                  }}
+                  className="text-[11px] text-emerald-700 hover:underline font-semibold block mx-auto"
+                >
+                  Auto-fill demo manager (Main FC)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStaffEmailInput('anita.canteen@college.edu');
+                    setStaffPasswordInput('staff123');
+                    setStaffCanteenCodeInput('NORTH-CAN');
+                  }}
+                  className="text-[11px] text-emerald-700 hover:underline font-semibold block mx-auto"
+                >
+                  Auto-fill demo staff (North Cafe)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

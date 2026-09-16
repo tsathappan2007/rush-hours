@@ -12,7 +12,11 @@ import {
   Minus,
   SlidersHorizontal,
   XCircle,
-  RotateCcw
+  RotateCcw,
+  User,
+  LogOut,
+  Mail,
+  Lock
 } from 'lucide-react';
 
 export default function App() {
@@ -20,6 +24,18 @@ export default function App() {
   const [orderStatus, setOrderStatus] = useState('CONFIRMED'); // CONFIRMED | PREPARING | READY | COLLECTED | FORFEITED | REFUNDED
   const [copied, setCopied] = useState(false);
   const [canteenPaused, setCanteenPaused] = useState(false);
+
+  // Student Authentication State
+  const [studentUser, setStudentUser] = useState({
+    fullName: 'Hariharan K',
+    email: 'hariharan@college.edu',
+    rollNumber: '21CS102',
+    token: 'jwt_demo_token_hariharan',
+  });
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authError, setAuthError] = useState('');
 
   // 2-minute grace window timer (120 seconds)
   const [graceSeconds, setGraceSeconds] = useState(115);
@@ -174,6 +190,35 @@ export default function App() {
     setOrderStatus('REFUNDED');
   };
 
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const email = loginEmail.trim().toLowerCase();
+    if (!email.endsWith('@college.edu')) {
+      setAuthError('Must be a valid college email ending in @college.edu');
+      return;
+    }
+    if (!loginPassword) {
+      setAuthError('Please enter your password');
+      return;
+    }
+    const namePart = email.split('@')[0];
+    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    setStudentUser({
+      fullName: formattedName,
+      email: email,
+      rollNumber: '21CS101',
+      token: 'jwt_demo_' + Date.now(),
+    });
+    setShowAuthModal(false);
+    setLoginEmail('');
+    setLoginPassword('');
+  };
+
+  const handleLogout = () => {
+    setStudentUser(null);
+  };
+
   return (
     <div className="max-w-md mx-auto min-h-screen bg-gray-50 flex flex-col justify-between shadow-2xl border-x border-gray-200 font-sans">
       {/* Top Header */}
@@ -186,17 +231,41 @@ export default function App() {
           <p className="text-[11px] text-gray-500 font-medium">Pre-order • Skip Counter Rush</p>
         </div>
 
-        {canteenPaused ? (
-          <div className="flex items-center space-x-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full text-xs font-bold text-rose-700">
-            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-            <span>Orders Paused</span>
-          </div>
-        ) : (
-          <div className="flex items-center space-x-1.5 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full text-xs font-bold text-emerald-700">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Open & Taking Orders</span>
-          </div>
-        )}
+        {/* Student Auth & Status */}
+        <div className="flex items-center space-x-2">
+          {studentUser ? (
+            <div className="flex items-center space-x-1.5 bg-gray-100 pl-2 pr-1 py-1 rounded-full text-xs font-semibold text-gray-800 border border-gray-200">
+              <User className="w-3.5 h-3.5 text-orange-600" />
+              <span className="max-w-[80px] truncate">{studentUser.fullName.split(' ')[0]}</span>
+              <button
+                onClick={handleLogout}
+                title="Logout"
+                className="p-1 hover:bg-gray-200 rounded-full text-gray-500 hover:text-gray-800 transition"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-full transition shadow-xs"
+            >
+              Sign In
+            </button>
+          )}
+
+          {canteenPaused ? (
+            <div className="flex items-center space-x-1 bg-rose-50 border border-rose-200 px-2 py-1 rounded-full text-[11px] font-bold text-rose-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              <span>Paused</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full text-[11px] font-bold text-emerald-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Open</span>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Main Content Area */}
@@ -648,6 +717,96 @@ export default function App() {
           Pickup Pass
         </button>
       </nav>
+
+      {/* Student Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 animate-fadeIn space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">Student Sign In</h3>
+                  <p className="text-[11px] text-gray-500">Must use college email</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAuthModal(false);
+                  setAuthError('');
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {authError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium flex items-center space-x-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLoginSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">College Email</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                  <input
+                    type="email"
+                    required
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="student@college.edu"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+                <span className="text-[10px] text-gray-400 mt-0.5 block">Allowed domain: @college.edu</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                  <input
+                    type="password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-md"
+                >
+                  Sign In with College ID
+                </button>
+              </div>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('hariharan@college.edu');
+                    setLoginPassword('college123');
+                  }}
+                  className="text-[11px] text-orange-600 hover:underline font-semibold"
+                >
+                  Auto-fill demo student credentials
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
