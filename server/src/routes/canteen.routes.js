@@ -1,22 +1,23 @@
 import { Router } from 'express';
+import {
+  listCanteens,
+  getCanteenMenu,
+  toggleItemStock,
+  toggleCanteenOrders,
+} from '../controllers/canteen.controller.js';
 
 const router = Router();
 
-// Get list of canteens on campus
-router.get('/', (req, res) => {
-  res.json({ message: 'Canteen scaffold: List campus canteens' });
-});
+// Student & Staff: Browse all canteens
+router.get('/', listCanteens);
 
-// Get live menu for a specific canteen
-router.get('/:canteenId/menu', (req, res) => {
-  res.json({ message: `Canteen scaffold: Menu for canteen ${req.params.canteenId}` });
-});
+// Student & Staff: Browse live menu, stock levels, and active slots for a canteen
+router.get('/:canteenId/menu', getCanteenMenu);
 
-// Update stock status of an item (staff)
-router.patch('/:canteenId/items/:itemId/stock', (req, res) => {
-  res.json({
-    message: `Canteen scaffold: Stock update for item ${req.params.itemId} in canteen ${req.params.canteenId}`
-  });
-});
+// Canteen Staff: Toggle item in/out of stock
+router.patch('/:canteenId/items/:itemId/toggle-stock', toggleItemStock);
+
+// Canteen Staff: Pause or resume accepting new orders for the canteen
+router.patch('/:canteenId/toggle-status', toggleCanteenOrders);
 
 export default router;

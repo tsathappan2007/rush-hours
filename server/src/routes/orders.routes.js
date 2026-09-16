@@ -1,25 +1,23 @@
 import { Router } from 'express';
+import {
+  createOrder,
+  getStudentOrders,
+  getCanteenOrders,
+  updateOrderStatus,
+} from '../controllers/order.controller.js';
 
 const router = Router();
 
-// Create new pre-order (student)
-router.post('/', (req, res) => {
-  res.json({ message: 'Orders scaffold: Create new pre-order' });
-});
+// Student: Place pre-order (atomic stock validation)
+router.post('/', createOrder);
 
-// Get student's order history or active orders
-router.get('/my-orders', (req, res) => {
-  res.json({ message: 'Orders scaffold: Student active and past orders' });
-});
+// Student: View own orders
+router.get('/my-orders', getStudentOrders);
 
-// Get incoming/active orders for a canteen (staff queue)
-router.get('/canteen/:canteenId', (req, res) => {
-  res.json({ message: `Orders scaffold: Live order queue for canteen ${req.params.canteenId}` });
-});
+// Canteen Staff: View incoming and active orders for their canteen
+router.get('/canteen/:canteenId', getCanteenOrders);
 
-// Update order status (PREPARING -> READY -> COMPLETED / CANCELLED)
-router.patch('/:orderId/status', (req, res) => {
-  res.json({ message: `Orders scaffold: Update status for order ${req.params.orderId}` });
-});
+// Canteen Staff: Update order status (strictly enforces PAID -> CONFIRMED -> PREPARING -> READY -> COLLECTED)
+router.patch('/:orderId/status', updateOrderStatus);
 
 export default router;
