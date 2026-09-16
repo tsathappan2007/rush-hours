@@ -17,6 +17,7 @@ enum StockMode {
 }
 
 enum OrderStatus {
+  PENDING_PAYMENT
   PAID
   CONFIRMED
   PREPARING
@@ -153,7 +154,7 @@ model Order {
   studentId          String      @map("student_id") @db.Uuid
   canteenId          String      @map("canteen_id") @db.Uuid
   timeSlotId         String?     @map("time_slot_id") @db.Uuid
-  status             OrderStatus @default(PAID)
+  status             OrderStatus @default(PENDING_PAYMENT)
   totalAmount        Decimal     @map("total_amount") @db.Decimal(10, 2)
   razorpayOrderId    String?     @map("razorpay_order_id") @db.VarChar(100)
   razorpayPaymentId  String?     @map("razorpay_payment_id") @db.VarChar(100)

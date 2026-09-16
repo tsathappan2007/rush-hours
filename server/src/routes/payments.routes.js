@@ -1,20 +1,20 @@
 import { Router } from 'express';
+import {
+  checkout,
+  handleWebhook,
+  cleanupExpiredOrders,
+} from '../controllers/payment.controller.js';
 
 const router = Router();
 
-// Create Razorpay order
-router.post('/create-order', (req, res) => {
-  res.json({ message: 'Payments scaffold: Create Razorpay order' });
-});
+// Student: Checkout & initialize Razorpay payment order session
+router.post('/checkout', checkout);
+router.post('/create-order', checkout); // Compatibility alias
 
-// Verify payment signature
-router.post('/verify-payment', (req, res) => {
-  res.json({ message: 'Payments scaffold: Verify Razorpay payment signature' });
-});
+// Razorpay: Server-side webhook listener (cryptographic HMAC validation & order confirmation)
+router.post('/webhook', handleWebhook);
 
-// Razorpay webhook endpoint
-router.post('/webhook', (req, res) => {
-  res.json({ message: 'Payments scaffold: Razorpay webhook listener' });
-});
+// Maintenance / Cron: Sweep and refund unconfirmed expired orders
+router.post('/cleanup-expired', cleanupExpiredOrders);
 
 export default router;

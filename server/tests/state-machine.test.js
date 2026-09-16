@@ -4,6 +4,7 @@ import { VALID_ORDER_TRANSITIONS } from '../src/controllers/order.controller.js'
 
 describe('Order State Machine Enforcement', () => {
   test('strictly enforces single-step transitions without skipping states', () => {
+    assert.equal(VALID_ORDER_TRANSITIONS['PENDING_PAYMENT'], 'CONFIRMED');
     assert.equal(VALID_ORDER_TRANSITIONS['PAID'], 'CONFIRMED');
     assert.equal(VALID_ORDER_TRANSITIONS['CONFIRMED'], 'PREPARING');
     assert.equal(VALID_ORDER_TRANSITIONS['PREPARING'], 'READY');

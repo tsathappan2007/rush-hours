@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Custom Enum Types
 -- ----------------------------------------------------
 CREATE TYPE "StockMode" AS ENUM ('COUNTABLE', 'SLOT_CAPACITY');
-CREATE TYPE "OrderStatus" AS ENUM ('PAID', 'CONFIRMED', 'PREPARING', 'READY', 'COLLECTED', 'FORFEITED', 'REFUNDED');
+CREATE TYPE "OrderStatus" AS ENUM ('PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'READY', 'COLLECTED', 'FORFEITED', 'REFUNDED');
 CREATE TYPE "StaffRole" AS ENUM ('MANAGER', 'COUNTER_STAFF');
 
 -- ----------------------------------------------------
@@ -141,7 +141,7 @@ CREATE TABLE "orders" (
     "student_id" UUID NOT NULL,
     "canteen_id" UUID NOT NULL,
     "time_slot_id" UUID,
-    "status" "OrderStatus" NOT NULL DEFAULT 'PAID',
+    "status" "OrderStatus" NOT NULL DEFAULT 'PENDING_PAYMENT',
     "total_amount" DECIMAL(10, 2) NOT NULL,
     "razorpay_order_id" VARCHAR(100),
     "razorpay_payment_id" VARCHAR(100),

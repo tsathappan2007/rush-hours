@@ -3,8 +3,9 @@ import { prisma } from '../db/prisma.js';
 import { decrementStockAtomic, InsufficientStockError, TimeSlotFullError } from '../services/stock.service.js';
 
 // Strict State Machine transitions:
-// PAID -> CONFIRMED -> PREPARING -> READY -> COLLECTED
+// PENDING_PAYMENT / PAID -> CONFIRMED -> PREPARING -> READY -> COLLECTED
 export const VALID_ORDER_TRANSITIONS = {
+  PENDING_PAYMENT: 'CONFIRMED',
   PAID: 'CONFIRMED',
   CONFIRMED: 'PREPARING',
   PREPARING: 'READY',

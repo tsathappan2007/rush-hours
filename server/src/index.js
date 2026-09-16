@@ -15,7 +15,11 @@ app.use(cors({
   origin: [config.cors.studentUrl, config.cors.canteenUrl],
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Health check

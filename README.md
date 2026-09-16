@@ -94,6 +94,98 @@ Configure your environment variables:
 - **`DATABASE_URL`**: Your local PostgreSQL connection string (e.g. `postgresql://postgres:postgres@localhost:5432/rush_hours_db`).
 - **`JWT_SECRET`**: A secret key for JWT session signing.
 - **`RAZORPAY_KEY_ID`** & **`RAZORPAY_KEY_SECRET`**: Your test credentials from the [Razorpay Dashboard](https://dashboard.razorpay.com/).
+- **`RAZORPAY_WEBHOOK_SECRET`**: A secret string of your choice used to sign and verify incoming webhook requests.
+
+---
+
+## 💳 Razorpay Test Mode Setup
+
+Rush Hours supports full end-to-end Razorpay integration with server-side webhook order confirmation, atomic stock decrements, and automatic refunds on stock collisions or payment timeouts.
+
+### 1. Getting Razorpay Test API Keys
+1. Sign up or log in at [Razorpay Dashboard](https://dashboard.razorpay.com/).
+2. On the top/left navigation, toggle the switch from **Live Mode** to **Test Mode**.
+3. Go to **Settings** $\rightarrow$ **API Keys**.
+4. Click **Generate Test Key**.
+5. Copy the **Key ID** (`rzp_test_...`) and **Key Secret** into your `.env` file:
+   ```env
+   RAZORPAY_KEY_ID=rzp_test_your_key_id
+   RAZORPAY_KEY_SECRET=your_razorpay_secret
+   RAZORPAY_WEBHOOK_SECRET=my_local_webhook_secret_123
+   ```
+6. Also set the public key for the student frontend in `.env`:
+   ```env
+   VITE_RAZORPAY_KEY_ID=rzp_test_your_key_id
+   ```
+
+*(Note: If you run without keys, Rush Hours automatically activates **Mock Test Mode**, generating test orders and mock refunds so your local development workflow never breaks).*
+
+---
+
+## 📡 Simulating Razorpay Webhooks Locally
+
+In production, Razorpay sends an HTTP `POST` to `/api/payments/webhook` with an `x-razorpay-signature` header computed via HMAC-SHA256. For local testing, you can simulate verified webhooks in two ways:
+
+### Option A: Using the built-in simulation script (Fastest)
+Ensure the server is running (`npm run dev:server`), then run from `server/` or the root:
+
+```bash
+# In server/ directory:
+npm run webhook:simulate <order_id> <payment_id> <event>
+
+# Example - Confirm a sample order:
+npm run webhook:simulate order_sample_rzp_12345 pay_test_777 payment.captured
+```
+This script computes the valid HMAC-SHA256 signature using your `RAZORPAY_WEBHOOK_SECRET` and sends the webhook payload to `http://localhost:5000/api/payments/webhook`.
+
+### Option B: Using `curl` with manual HMAC signature
+1. Compute the HMAC-SHA256 digest of your JSON payload using your webhook secret.
+2. Send the request:
+```bash
+curl -X POST http://localhost:5000/api/payments/webhook \
+  -H "Content-Type: application/json" \
+  -H "x-razorpay-signature: <computed_hmac_sha256_hex>" \
+  -d '{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_123","order_id":"order_sample_rzp_12345","amount":10000}}}}'
+```
+
+### Option C: Using Razorpay Webhook Dashboard + ngrok / localtunnel
+To receive live events from the Razorpay Test Dashboard on your localhost:
+```bash
+npx localtunnel --port 5000
+```
+Add the public URL (e.g. `https://your-tunnel.loca.lt/api/payments/webhook`) under **Razorpay Dashboard $\rightarrow$ Settings $\rightarrow$ Webhooks**, subscribe to `payment.captured` and `payment.failed`, and copy the webhook secret to `.env`.
+
+---
+
+## 🔄 Payment & Order Lifecycle Flow
+
+```
+[Student Checkout]
+       │
+       ▼
+1. POST /api/payments/checkout
+   • Calculates verified amount from DB prices (₹ to paise)
+   • Calls Razorpay Orders API: orders.create(...)
+   • Creates Order in DB with status "PENDING_PAYMENT"
+   • Note: Stock is NOT decremented yet
+       │
+       ▼
+2. Student completes payment in Razorpay Checkout Modal
+       │
+       ▼
+3. Razorpay triggers Webhook: POST /api/payments/webhook
+   • Server validates cryptographic HMAC-SHA256 signature
+   • Runs Atomic Database Transaction:
+     ├── Decrements stock atomically (WHERE quantity >= order_quantity)
+     ├── Moves order status from PENDING_PAYMENT to CONFIRMED
+     └── Issues PickupToken with 4-digit OTP & dynamic QR payload
+       │
+       ├── [If Stock Exhausted during checkout race]
+       │   └── Automatically triggers refund via Razorpay API & marks order REFUNDED
+       │
+       └── [If Payment Failed / Timed out]
+           └── Automatically marks order FORFEITED and refunds any captured funds
+```
 
 ---
 
@@ -126,12 +218,12 @@ Alternatively, you can `cd` into any subfolder and run `npm run dev` directly.
 
 ---
 
-## 🧪 Verifying the Setup
+## 🧪 Running Tests
 
-Once running, verify each part:
-- **Backend API Health Check**: Visit `http://localhost:5000/health` (should return JSON `{ "status": "ok", ... }`).
-- **Student App**: Open `http://localhost:5173` on desktop or in mobile responsive mode.
-- **Canteen Portal**: Open `http://localhost:5174` to view the canteen dashboard.
+Run the test suite (concurrency race-condition tests, Razorpay payment flows, and state machine enforcement):
+```bash
+npm test --workspace=server
+```
 
 ---
 
@@ -141,8 +233,13 @@ Once running, verify each part:
 - [x] Route outlines for auth, canteen menus, orders, payments, and pickup
 - [x] Mobile-first UI scaffold for `student-app`
 - [x] Staff UI scaffold for `canteen-portal`
-- [ ] PostgreSQL database schema & migrations (users, canteens, items, orders)
-- [ ] JWT authentication (student roll no. / email & canteen staff credentials)
-- [ ] Razorpay order creation and webhook signature validation
+- [x] PostgreSQL database schema & migrations (Prisma ORM)
+- [x] Canteen & order REST APIs with atomic stock transactions
+- [x] Strict linear order state machine enforcement
+- [x] Razorpay order checkout session creation
+- [x] Cryptographic Razorpay webhook handler with atomic stock decrement
+- [x] Auto-refund trigger on stock depletion and unconfirmed order timeouts
+- [x] Test suite: concurrency race conditions & payment flows
+- [ ] Student roll no. / email auth & canteen staff session authentication
 - [ ] Real-time queue updates (WebSockets / SSE)
-- [ ] Pickup QR code generation & staff camera scanner integration
+- [ ] In-app pickup QR code display & staff camera barcode scanner integration
