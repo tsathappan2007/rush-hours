@@ -1,6 +1,12 @@
 import crypto from 'crypto';
 import { prisma } from '../db/prisma.js';
-import { decrementStockAtomic, InsufficientStockError, TimeSlotFullError } from '../services/stock.service.js';
+import {
+  decrementStockAtomic,
+  restoreStockAtomic,
+  InsufficientStockError,
+  TimeSlotFullError,
+} from '../services/stock.service.js';
+import { refundPayment } from '../services/razorpay.service.js';
 
 // Strict State Machine transitions:
 // PENDING_PAYMENT / PAID -> CONFIRMED -> PREPARING -> READY -> COLLECTED
@@ -98,6 +104,7 @@ export async function createOrder(req, res) {
         quantity,
         unitPrice,
         subtotal,
+        customizations: Array.isArray(item.customizations) ? item.customizations : [],
       });
     }
 
@@ -119,7 +126,8 @@ export async function createOrder(req, res) {
           studentId,
           canteenId,
           timeSlotId: timeSlotId || null,
-          status: 'PAID',
+          status: 'CONFIRMED',
+          confirmedAt: new Date(),
           totalAmount,
           paidAt: new Date(),
           orderItems: {
@@ -128,6 +136,7 @@ export async function createOrder(req, res) {
               quantity: oi.quantity,
               unitPrice: oi.unitPrice,
               subtotal: oi.subtotal,
+              customizations: oi.customizations,
             })),
           },
           pickupToken: {
@@ -316,10 +325,34 @@ export async function updateOrderStatus(req, res) {
       });
     }
 
+    // STUDENT CANCELLATION/EDIT GRACE WINDOW ENFORCEMENT:
+    // Cannot move from CONFIRMED to PREPARING within 2 minutes of confirmation
+    if (currentStatus === 'CONFIRMED' && normalizedTarget === 'PREPARING') {
+      const graceWindowMs = 2 * 60 * 1000;
+      const confirmedTime = order.confirmedAt
+        ? new Date(order.confirmedAt).getTime()
+        : new Date(order.createdAt).getTime();
+      const elapsed = Date.now() - confirmedTime;
+
+      if (elapsed < graceWindowMs) {
+        const remainingSecs = Math.ceil((graceWindowMs - elapsed) / 1000);
+        return res.status(400).json({
+          success: false,
+          error: `Order is in student cancellation/edit grace window. ${remainingSecs}s remaining before kitchen preparation can begin.`,
+          remainingGraceSeconds: remainingSecs,
+        });
+      }
+    }
+
     // Execute update
     const updateData = { status: normalizedTarget };
+    if (normalizedTarget === 'CONFIRMED') {
+      updateData.confirmedAt = new Date();
+    }
+    if (normalizedTarget === 'READY') {
+      updateData.readyAt = new Date();
+    }
 
-    // If order reaches COLLECTED, mark pickup token used
     const updatedOrder = await prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
         where: { id: orderId },
@@ -331,11 +364,11 @@ export async function updateOrderStatus(req, res) {
         },
       });
 
-      // If order moves to READY, set a short pickup window (15 minutes from now)
+      // If order moves to READY, set a 20-minute pickup window
       if (normalizedTarget === 'READY' && order.pickupToken) {
         await tx.pickupToken.update({
           where: { orderId },
-          data: { expiresAt: new Date(Date.now() + 15 * 60 * 1000) },
+          data: { expiresAt: new Date(Date.now() + 20 * 60 * 1000) },
         });
       }
 
@@ -357,5 +390,208 @@ export async function updateOrderStatus(req, res) {
   } catch (error) {
     console.error('Error updating order status:', error);
     res.status(500).json({ success: false, error: 'Failed to update order status' });
+  }
+}
+
+/**
+ * Cancel an order within the 2-minute grace window while in CONFIRMED status.
+ * Restores stock atomically and triggers refund via Razorpay.
+ * POST /api/orders/:orderId/cancel
+ */
+export async function cancelOrder(req, res) {
+  try {
+    const { orderId } = req.params;
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.status !== 'CONFIRMED') {
+      return res.status(400).json({
+        success: false,
+        error: `Only orders in "CONFIRMED" status can be cancelled. Current status is "${order.status}".`,
+      });
+    }
+
+    // Verify within 2-minute grace window
+    const graceWindowMs = 2 * 60 * 1000;
+    const confirmedTime = order.confirmedAt
+      ? new Date(order.confirmedAt).getTime()
+      : new Date(order.createdAt).getTime();
+    const elapsed = Date.now() - confirmedTime;
+
+    if (elapsed > graceWindowMs) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cancellation window expired. Orders can only be cancelled within 2 minutes of confirmation.',
+        elapsedSeconds: Math.floor(elapsed / 1000),
+      });
+    }
+
+    // Execute atomic cancellation: restore stock and mark REFUNDED
+    await prisma.$transaction(async (tx) => {
+      // 1. Restore reserved inventory
+      await restoreStockAtomic(order.orderItems, order.timeSlotId, tx);
+
+      // 2. Mark order status as REFUNDED
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: 'REFUNDED' },
+      });
+    });
+
+    // 3. Trigger refund via Razorpay if payment ID exists
+    let refundInfo = null;
+    if (order.razorpayPaymentId) {
+      refundInfo = await refundPayment(order.razorpayPaymentId, {
+        amount: Math.round(Number(order.totalAmount) * 100),
+        notes: { reason: 'Student cancelled within 2-minute grace window', orderNumber: order.orderNumber },
+      });
+    }
+
+    console.log(`[Order Audit] Order ${order.orderNumber} CANCELLED by student within 2-minute grace window. Stock restored.`);
+
+    res.json({
+      success: true,
+      message: `Order ${order.orderNumber} successfully cancelled within grace window. Stock restored and refund initiated.`,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: 'REFUNDED',
+        refund: refundInfo,
+      },
+    });
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({ success: false, error: 'Failed to cancel order' });
+  }
+}
+
+/**
+ * Edit an order's item customizations within the 2-minute grace window while in CONFIRMED status.
+ * PATCH /api/orders/:orderId/customizations
+ */
+export async function editOrderCustomizations(req, res) {
+  try {
+    const { orderId } = req.params;
+    const { itemCustomizations } = req.body; // Array of { orderItemId, customizations: string[] }
+
+    if (!Array.isArray(itemCustomizations) || itemCustomizations.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: itemCustomizations (array of { orderItemId, customizations })',
+      });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: true },
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.status !== 'CONFIRMED') {
+      return res.status(400).json({
+        success: false,
+        error: `Only orders in "CONFIRMED" status can be edited. Current status is "${order.status}".`,
+      });
+    }
+
+    // Verify within 2-minute grace window
+    const graceWindowMs = 2 * 60 * 1000;
+    const confirmedTime = order.confirmedAt
+      ? new Date(order.confirmedAt).getTime()
+      : new Date(order.createdAt).getTime();
+    const elapsed = Date.now() - confirmedTime;
+
+    if (elapsed > graceWindowMs) {
+      return res.status(400).json({
+        success: false,
+        error: 'Edit grace window expired. Customizations can only be modified within 2 minutes of confirmation.',
+      });
+    }
+
+    // Update customizations on specified order items
+    await prisma.$transaction(async (tx) => {
+      for (const ic of itemCustomizations) {
+        if (ic.orderItemId && Array.isArray(ic.customizations)) {
+          await tx.orderItem.update({
+            where: { id: ic.orderItemId },
+            data: { customizations: ic.customizations },
+          });
+        }
+      }
+    });
+
+    const updated = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        orderItems: { include: { menuItem: { select: { name: true } } } },
+      },
+    });
+
+    console.log(`[Order Audit] Order ${order.orderNumber} customizations updated by student within grace window.`);
+
+    res.json({
+      success: true,
+      message: 'Order customizations updated successfully.',
+      data: updated,
+    });
+  } catch (error) {
+    console.error('Error editing order customizations:', error);
+    res.status(500).json({ success: false, error: 'Failed to edit order customizations' });
+  }
+}
+
+/**
+ * Sweep and mark uncollected orders as FORFEITED if > 20 minutes have passed since becoming READY.
+ * POST /api/orders/sweep-forfeited
+ */
+export async function sweepForfeitedOrders(req, res) {
+  try {
+    const pickupDeadlineMs = 20 * 60 * 1000; // 20 minutes
+    const deadlineThreshold = new Date(Date.now() - pickupDeadlineMs);
+
+    // Find orders in READY status where readyAt was before deadlineThreshold
+    const expiredOrders = await prisma.order.findMany({
+      where: {
+        status: 'READY',
+        OR: [
+          { readyAt: { lt: deadlineThreshold } },
+          { readyAt: null, updatedAt: { lt: deadlineThreshold } },
+        ],
+      },
+    });
+
+    const forfeitedOrderNumbers = [];
+
+    for (const order of expiredOrders) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'FORFEITED' },
+      });
+
+      forfeitedOrderNumbers.push(order.orderNumber);
+      console.log(`[Order Audit] 🚨 Order ${order.orderNumber} marked FORFEITED: 20-minute pickup deadline exceeded after becoming READY.`);
+    }
+
+    res.json({
+      success: true,
+      message: `Sweep completed: ${forfeitedOrderNumbers.length} orders marked FORFEITED due to 20-minute pickup deadline expiry.`,
+      data: {
+        totalForfeited: forfeitedOrderNumbers.length,
+        forfeitedOrderNumbers,
+      },
+    });
+  } catch (error) {
+    console.error('Error sweeping forfeited orders:', error);
+    res.status(500).json({ success: false, error: 'Failed to sweep forfeited orders' });
   }
 }

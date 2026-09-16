@@ -146,6 +146,8 @@ CREATE TABLE "orders" (
     "razorpay_order_id" VARCHAR(100),
     "razorpay_payment_id" VARCHAR(100),
     "paid_at" TIMESTAMP(3),
+    "confirmed_at" TIMESTAMP(3),
+    "ready_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -169,6 +171,7 @@ CREATE TABLE "order_items" (
     "quantity" INTEGER NOT NULL DEFAULT 1,
     "unit_price" DECIMAL(10, 2) NOT NULL,
     "subtotal" DECIMAL(10, 2) NOT NULL,
+    "customizations" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
 
     CONSTRAINT "order_items_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "order_items_quantity_positive" CHECK ("quantity" > 0),

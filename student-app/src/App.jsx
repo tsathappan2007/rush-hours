@@ -1,12 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Utensils, QrCode, Clock, CheckCircle2, AlertTriangle, Copy, Check, ShoppingBag, Plus, Minus } from 'lucide-react';
+import {
+  Utensils,
+  QrCode,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Copy,
+  Check,
+  ShoppingBag,
+  Plus,
+  Minus,
+  SlidersHorizontal,
+  XCircle,
+  RotateCcw
+} from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('menu');
-  const [orderStatus, setOrderStatus] = useState('CONFIRMED'); // CONFIRMED | PREPARING | READY | COLLECTED
+  const [orderStatus, setOrderStatus] = useState('CONFIRMED'); // CONFIRMED | PREPARING | READY | COLLECTED | FORFEITED | REFUNDED
   const [copied, setCopied] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(14 * 60 + 45); // 14m 45s pickup countdown
-  const [canteenPaused, setCanteenPaused] = useState(false); // Can be toggled for demo
+  const [canteenPaused, setCanteenPaused] = useState(false);
+
+  // 2-minute grace window timer (120 seconds)
+  const [graceSeconds, setGraceSeconds] = useState(115);
+
+  // 20-minute pickup deadline countdown (1200 seconds)
+  const [readySeconds, setReadySeconds] = useState(20 * 60);
 
   // Time-slots with capacity limits
   const timeSlots = [
@@ -18,17 +37,78 @@ export default function App() {
 
   const [selectedSlotId, setSelectedSlotId] = useState('slot-1');
 
-  // Sample menu items
+  // Menu items with available customization tags
   const menuItems = [
-    { id: 'item-1', name: 'Wok Tossed Veg Hakka Noodles', price: 70.00, category: 'Meals', stock: 'Slot Capacity' },
-    { id: 'item-2', name: 'Crispy Punjabi Samosa (2 pcs)', price: 30.00, category: 'Snacks', stock: '24 left' },
-    { id: 'item-3', name: 'Fresh Mint Lime Soda', price: 35.00, category: 'Beverages', stock: '18 left' },
+    {
+      id: 'item-1',
+      name: 'Wok Tossed Veg Hakka Noodles',
+      price: 70.00,
+      category: 'Meals',
+      stock: 'Slot Capacity',
+      availableCustomizations: ['No Onion', 'Extra Spicy', 'Less Oil'],
+    },
+    {
+      id: 'item-2',
+      name: 'Crispy Punjabi Samosa (2 pcs)',
+      price: 30.00,
+      category: 'Snacks',
+      stock: '24 left',
+      availableCustomizations: ['Extra Chutney', 'No Onion'],
+    },
+    {
+      id: 'item-3',
+      name: 'Fresh Mint Lime Soda',
+      price: 35.00,
+      category: 'Beverages',
+      stock: '18 left',
+      availableCustomizations: ['Less Sugar', 'Extra Mint', 'No Ice'],
+    },
   ];
 
   const [cart, setCart] = useState({
     'item-1': 1,
     'item-2': 1,
   });
+
+  // Selected item customizations: { 'item-1': ['No Onion', 'Extra Spicy'] }
+  const [customizations, setCustomizations] = useState({
+    'item-1': ['No Onion', 'Extra Spicy'],
+    'item-2': ['Extra Chutney'],
+  });
+
+  // 2-minute grace countdown when CONFIRMED
+  useEffect(() => {
+    if (orderStatus !== 'CONFIRMED') return;
+    const interval = setInterval(() => {
+      setGraceSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [orderStatus]);
+
+  // 20-minute pickup countdown when READY
+  useEffect(() => {
+    if (orderStatus !== 'READY') return;
+    const interval = setInterval(() => {
+      setReadySeconds((prev) => {
+        if (prev <= 1) {
+          setOrderStatus('FORFEITED');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [orderStatus]);
+
+  const toggleCustomization = (itemId, tag) => {
+    setCustomizations((prev) => {
+      const current = prev[itemId] || [];
+      const updated = current.includes(tag)
+        ? current.filter((t) => t !== tag)
+        : [...current, tag];
+      return { ...prev, [itemId]: updated };
+    });
+  };
 
   const updateQuantity = (itemId, delta) => {
     setCart((prev) => {
@@ -50,7 +130,7 @@ export default function App() {
 
   const selectedSlot = timeSlots.find((s) => s.id === selectedSlotId);
 
-  // Active placed order state
+  // Active order object
   const activeOrder = {
     orderNumber: 'RH-2026-001',
     canteenName: 'Main Campus Food Court',
@@ -58,20 +138,17 @@ export default function App() {
     timeSlot: selectedSlot?.time || '12:30 - 12:45 PM',
     items: Object.entries(cart).map(([id, qty]) => {
       const m = menuItems.find((item) => item.id === id);
-      return { name: m?.name || 'Item', qty, price: (m?.price || 0) * qty };
+      return {
+        id,
+        name: m?.name || 'Item',
+        qty,
+        price: (m?.price || 0) * qty,
+        chosenCustomizations: customizations[id] || [],
+      };
     }),
     totalAmount,
     otpCode: '7492',
   };
-
-  // Timer countdown when order is READY
-  useEffect(() => {
-    if (orderStatus !== 'READY') return;
-    const interval = setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [orderStatus]);
 
   const formatTime = (secs) => {
     const mins = Math.floor(secs / 60);
@@ -86,10 +163,15 @@ export default function App() {
   };
 
   const handleCheckout = () => {
-    if (canteenPaused) return;
-    if (!selectedSlotId || selectedSlot?.remaining === 0) return;
+    if (canteenPaused || selectedSlot?.remaining === 0) return;
     setActiveTab('pickup');
     setOrderStatus('CONFIRMED');
+    setGraceSeconds(120);
+  };
+
+  const handleCancelOrder = () => {
+    if (graceSeconds <= 0) return;
+    setOrderStatus('REFUNDED');
   };
 
   return (
@@ -144,64 +226,93 @@ export default function App() {
               </div>
             )}
 
-            {/* Menu List */}
+            {/* Menu List with Customization Checkboxes */}
             <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3">
-              <h3 className="font-black text-sm text-gray-900">Live Menu & Stock</h3>
-              <div className="space-y-3 divide-y divide-gray-100">
+              <h3 className="font-black text-sm text-gray-900">Live Menu & Item Customizations</h3>
+              <div className="space-y-4 divide-y divide-gray-100">
                 {menuItems.map((item) => (
-                  <div key={item.id} className="pt-3 first:pt-0 flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-sm text-gray-800">{item.name}</h4>
-                      <div className="flex items-center space-x-2 text-xs text-gray-500 mt-0.5">
-                        <span className="font-bold text-orange-600">₹{item.price.toFixed(2)}</span>
-                        <span>•</span>
-                        <span className="text-[11px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 font-medium">
-                          {item.stock}
-                        </span>
+                  <div key={item.id} className="pt-3 first:pt-0 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-sm text-gray-800">{item.name}</h4>
+                        <div className="flex items-center space-x-2 text-xs text-gray-500 mt-0.5">
+                          <span className="font-bold text-orange-600">₹{item.price.toFixed(2)}</span>
+                          <span>•</span>
+                          <span className="text-[11px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 font-medium">
+                            {item.stock}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        {cart[item.id] ? (
+                          <div className="flex items-center space-x-2 bg-orange-50 border border-orange-200 rounded-xl p-1">
+                            <button
+                              onClick={() => updateQuantity(item.id, -1)}
+                              className="w-6 h-6 rounded-lg bg-white text-orange-700 flex items-center justify-center font-bold shadow-xs hover:bg-orange-100"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="font-bold text-xs text-orange-900 w-4 text-center">
+                              {cart[item.id]}
+                            </span>
+                            <button
+                              onClick={() => updateQuantity(item.id, 1)}
+                              className="w-6 h-6 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-orange-700"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => updateQuantity(item.id, 1)}
+                            disabled={canteenPaused}
+                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 text-xs font-bold px-3 py-1.5 rounded-xl transition"
+                          >
+                            + Add
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      {cart[item.id] ? (
-                        <div className="flex items-center space-x-2 bg-orange-50 border border-orange-200 rounded-xl p-1">
-                          <button
-                            onClick={() => updateQuantity(item.id, -1)}
-                            className="w-6 h-6 rounded-lg bg-white text-orange-700 flex items-center justify-center font-bold shadow-xs hover:bg-orange-100"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="font-bold text-xs text-orange-900 w-4 text-center">
-                            {cart[item.id]}
-                          </span>
-                          <button
-                            onClick={() => updateQuantity(item.id, 1)}
-                            className="w-6 h-6 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-orange-700"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                    {/* CUSTOMIZATION CHECKBOXES (shown if in cart) */}
+                    {cart[item.id] && item.availableCustomizations && (
+                      <div className="bg-orange-50/60 border border-orange-100 rounded-xl p-2.5 text-xs space-y-1.5">
+                        <span className="text-[10px] uppercase font-bold text-orange-800 tracking-wider flex items-center">
+                          <SlidersHorizontal className="w-3 h-3 mr-1" /> Customization Preferences:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {item.availableCustomizations.map((tag) => {
+                            const isChecked = (customizations[item.id] || []).includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleCustomization(item.id, tag)}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center space-x-1 ${
+                                  isChecked
+                                    ? 'bg-orange-600 text-white shadow-xs'
+                                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                                }`}
+                              >
+                                <span>{isChecked ? '✓' : '+'}</span>
+                                <span>{tag}</span>
+                              </button>
+                            );
+                          })}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => updateQuantity(item.id, 1)}
-                          disabled={canteenPaused}
-                          className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 text-xs font-bold px-3 py-1.5 rounded-xl transition"
-                        >
-                          + Add
-                        </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* TIME-SLOT SELECTION WITH CAPACITY STATUS */}
+            {/* Time-Slot Picker */}
             <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="font-black text-sm text-gray-900">Select Pickup Time-Slot</h3>
-                  <p className="text-xs text-gray-500">Pick an available batch window to collect your order</p>
-                </div>
+              <div>
+                <h3 className="font-black text-sm text-gray-900">Select Pickup Time-Slot</h3>
+                <p className="text-xs text-gray-500">Pick an available batch window to collect your order</p>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -224,7 +335,6 @@ export default function App() {
                       }`}
                     >
                       <div className="font-bold text-xs text-gray-900">{slot.time}</div>
-
                       <div className="mt-1 flex items-center justify-between text-[11px]">
                         {isFull ? (
                           <span className="font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
@@ -244,7 +354,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Checkout Sticky Bar */}
+            {/* Checkout Bar */}
             {Object.keys(cart).length > 0 && (
               <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-md space-y-3">
                 <div className="flex justify-between items-center text-sm">
@@ -278,25 +388,12 @@ export default function App() {
                 </button>
               </div>
             )}
-
-            {/* Demo Simulation Toggle */}
-            <div className="bg-gray-100 p-2.5 rounded-xl text-xs flex justify-between items-center text-gray-600">
-              <span>Demo Staff Pause Simulator:</span>
-              <button
-                onClick={() => setCanteenPaused(!canteenPaused)}
-                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] text-white transition ${
-                  canteenPaused ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
-                }`}
-              >
-                {canteenPaused ? 'Resume Orders' : 'Simulate Staff Pause'}
-              </button>
-            </div>
           </div>
         )}
 
         {activeTab === 'pickup' && (
           <div className="space-y-4">
-            {/* Status Flow Tracker */}
+            {/* Status Header */}
             <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -336,117 +433,188 @@ export default function App() {
               </div>
             </div>
 
-            {/* Main Pickup Pass Card */}
-            <div className="bg-white rounded-3xl p-5 border border-gray-200 shadow-md text-center space-y-4 relative overflow-hidden">
-              {/* Collected Watermark Badge */}
-              {orderStatus === 'COLLECTED' && (
-                <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 space-y-2">
-                  <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                    <CheckCircle2 className="w-10 h-10" />
-                  </div>
-                  <h3 className="text-xl font-black text-gray-900">Meal Collected!</h3>
-                  <p className="text-xs text-gray-500 max-w-xs">
-                    This single-use QR and OTP have been redeemed. Enjoy your meal!
-                  </p>
-                </div>
-              )}
-
-              {/* Ready Expiration Banner */}
-              {orderStatus === 'READY' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-2.5 flex items-center justify-between text-xs text-amber-800">
-                  <span className="flex items-center font-medium">
+            {/* 2-MINUTE CANCELLATION / EDIT GRACE WINDOW CARD */}
+            {orderStatus === 'CONFIRMED' && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-900 flex items-center">
                     <Clock className="w-4 h-4 mr-1 text-amber-600" />
-                    Pickup Window Expiry:
+                    2-Minute Grace Window:
                   </span>
-                  <span className="font-mono font-bold text-sm bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded-lg">
-                    {formatTime(secondsLeft)}
+                  <span className="font-mono font-black text-sm bg-amber-200 text-amber-900 px-2 py-0.5 rounded-lg">
+                    {formatTime(graceSeconds)} left
                   </span>
                 </div>
-              )}
-
-              <div>
-                <h3 className="text-sm font-bold text-gray-800">Show at Canteen Counter</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Staff will scan your QR code or enter your 4-digit OTP</p>
-              </div>
-
-              {/* Dynamic QR Code Box */}
-              <div className="w-52 h-52 mx-auto bg-white border-2 border-gray-800 rounded-2xl flex flex-col items-center justify-center p-3 shadow-inner">
-                <svg viewBox="0 0 100 100" className="w-full h-full text-gray-900">
-                  <rect x="0" y="0" width="30" height="30" fill="currentColor" rx="4" />
-                  <rect x="5" y="5" width="20" height="20" fill="white" rx="2" />
-                  <rect x="10" y="10" width="10" height="10" fill="currentColor" rx="1" />
-
-                  <rect x="70" y="0" width="30" height="30" fill="currentColor" rx="4" />
-                  <rect x="75" y="5" width="20" height="20" fill="white" rx="2" />
-                  <rect x="80" y="10" width="10" height="10" fill="currentColor" rx="1" />
-
-                  <rect x="0" y="70" width="30" height="30" fill="currentColor" rx="4" />
-                  <rect x="5" y="75" width="20" height="20" fill="white" rx="2" />
-                  <rect x="10" y="80" width="10" height="10" fill="currentColor" rx="1" />
-
-                  <rect x="35" y="5" width="6" height="6" fill="currentColor" />
-                  <rect x="45" y="12" width="6" height="6" fill="currentColor" />
-                  <rect x="55" y="5" width="6" height="6" fill="currentColor" />
-                  <rect x="38" y="25" width="6" height="6" fill="currentColor" />
-                  <rect x="50" y="22" width="6" height="6" fill="currentColor" />
-                  <rect x="15" y="45" width="6" height="6" fill="currentColor" />
-                  <rect x="25" y="52" width="6" height="6" fill="currentColor" />
-                  <rect x="42" y="42" width="16" height="16" fill="currentColor" rx="2" />
-                  <rect x="70" y="45" width="6" height="6" fill="currentColor" />
-                  <rect x="85" y="52" width="6" height="6" fill="currentColor" />
-                  <rect x="38" y="75" width="6" height="6" fill="currentColor" />
-                  <rect x="52" y="82" width="6" height="6" fill="currentColor" />
-                  <rect x="75" y="78" width="6" height="6" fill="currentColor" />
-                  <rect x="88" y="88" width="6" height="6" fill="currentColor" />
-                </svg>
-              </div>
-
-              {/* 4-Digit OTP Fallback Card */}
-              <div className="bg-gradient-to-b from-orange-50 to-amber-50 border border-orange-200/80 rounded-2xl p-3.5 flex items-center justify-between">
-                <div className="text-left">
-                  <div className="text-[11px] font-semibold text-orange-800 uppercase tracking-wide">
-                    4-Digit Pickup OTP
+                <p className="text-[11px] text-amber-800">
+                  Kitchen prep is locked during this window. You can cancel for an instant refund or edit item preferences.
+                </p>
+                {graceSeconds > 0 && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={handleCancelOrder}
+                      className="flex-1 bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs py-2 rounded-xl transition flex items-center justify-center space-x-1"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Cancel & Refund</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('menu')}
+                      className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2 rounded-xl transition flex items-center justify-center space-x-1"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Edit Preferences</span>
+                    </button>
                   </div>
-                  <div className="font-mono font-black text-3xl tracking-widest text-orange-600 mt-0.5">
-                    {activeOrder.otpCode}
+                )}
+              </div>
+            )}
+
+            {/* 20-MINUTE READY PICKUP DEADLINE */}
+            {orderStatus === 'READY' && (
+              <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-3.5 flex items-center justify-between text-xs shadow-xs">
+                <div>
+                  <span className="font-bold text-emerald-900 block flex items-center">
+                    <Clock className="w-4 h-4 mr-1 text-emerald-600" />
+                    20-Min Pickup Deadline:
+                  </span>
+                  <span className="text-[11px] text-emerald-700">Orders uncollected past deadline are forfeited</span>
+                </div>
+                <span className="font-mono font-black text-sm bg-emerald-200 text-emerald-900 px-2.5 py-1 rounded-lg">
+                  {formatTime(readySeconds)}
+                </span>
+              </div>
+            )}
+
+            {/* FORFEITED ALERT BANNER */}
+            {orderStatus === 'FORFEITED' && (
+              <div className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-4 text-center space-y-2">
+                <AlertTriangle className="w-8 h-8 text-rose-600 mx-auto" />
+                <h3 className="text-base font-black text-rose-900">Order Forfeited</h3>
+                <p className="text-xs text-rose-700">
+                  This order was not collected within the 20-minute deadline after becoming ready. As per campus canteen policy, uncollected food has been cleared.
+                </p>
+              </div>
+            )}
+
+            {/* REFUNDED ALERT BANNER */}
+            {orderStatus === 'REFUNDED' && (
+              <div className="bg-blue-50 border-2 border-blue-400 rounded-2xl p-4 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-blue-600 mx-auto" />
+                <h3 className="text-base font-black text-blue-900">Order Cancelled & Refunded</h3>
+                <p className="text-xs text-blue-700">
+                  You cancelled within the 2-minute grace window. ₹{activeOrder.totalAmount.toFixed(2)} has been refunded to your original payment method.
+                </p>
+              </div>
+            )}
+
+            {/* Main Pickup Pass Card */}
+            {['CONFIRMED', 'PREPARING', 'READY', 'COLLECTED'].includes(orderStatus) && (
+              <div className="bg-white rounded-3xl p-5 border border-gray-200 shadow-md text-center space-y-4 relative overflow-hidden">
+                {orderStatus === 'COLLECTED' && (
+                  <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 space-y-2">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                      <CheckCircle2 className="w-10 h-10" />
+                    </div>
+                    <h3 className="text-xl font-black text-gray-900">Meal Collected!</h3>
+                    <p className="text-xs text-gray-500 max-w-xs">
+                      This single-use QR and OTP have been redeemed. Enjoy your meal!
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">Show at Canteen Counter</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Staff will scan your QR code or enter your 4-digit OTP</p>
+                </div>
+
+                {/* Dynamic QR Code Box */}
+                <div className="w-48 h-48 mx-auto bg-white border-2 border-gray-800 rounded-2xl flex flex-col items-center justify-center p-3 shadow-inner">
+                  <svg viewBox="0 0 100 100" className="w-full h-full text-gray-900">
+                    <rect x="0" y="0" width="30" height="30" fill="currentColor" rx="4" />
+                    <rect x="5" y="5" width="20" height="20" fill="white" rx="2" />
+                    <rect x="10" y="10" width="10" height="10" fill="currentColor" rx="1" />
+
+                    <rect x="70" y="0" width="30" height="30" fill="currentColor" rx="4" />
+                    <rect x="75" y="5" width="20" height="20" fill="white" rx="2" />
+                    <rect x="80" y="10" width="10" height="10" fill="currentColor" rx="1" />
+
+                    <rect x="0" y="70" width="30" height="30" fill="currentColor" rx="4" />
+                    <rect x="5" y="75" width="20" height="20" fill="white" rx="2" />
+                    <rect x="10" y="80" width="10" height="10" fill="currentColor" rx="1" />
+
+                    <rect x="35" y="5" width="6" height="6" fill="currentColor" />
+                    <rect x="45" y="12" width="6" height="6" fill="currentColor" />
+                    <rect x="55" y="5" width="6" height="6" fill="currentColor" />
+                    <rect x="38" y="25" width="6" height="6" fill="currentColor" />
+                    <rect x="50" y="22" width="6" height="6" fill="currentColor" />
+                    <rect x="15" y="45" width="6" height="6" fill="currentColor" />
+                    <rect x="25" y="52" width="6" height="6" fill="currentColor" />
+                    <rect x="42" y="42" width="16" height="16" fill="currentColor" rx="2" />
+                    <rect x="70" y="45" width="6" height="6" fill="currentColor" />
+                    <rect x="85" y="52" width="6" height="6" fill="currentColor" />
+                    <rect x="38" y="75" width="6" height="6" fill="currentColor" />
+                    <rect x="52" y="82" width="6" height="6" fill="currentColor" />
+                    <rect x="75" y="78" width="6" height="6" fill="currentColor" />
+                    <rect x="88" y="88" width="6" height="6" fill="currentColor" />
+                  </svg>
+                </div>
+
+                {/* 4-Digit OTP Fallback Card */}
+                <div className="bg-gradient-to-b from-orange-50 to-amber-50 border border-orange-200/80 rounded-2xl p-3.5 flex items-center justify-between">
+                  <div className="text-left">
+                    <div className="text-[11px] font-semibold text-orange-800 uppercase tracking-wide">
+                      4-Digit Pickup OTP
+                    </div>
+                    <div className="font-mono font-black text-3xl tracking-widest text-orange-600 mt-0.5">
+                      {activeOrder.otpCode}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCopyOtp}
+                    className="bg-white border border-orange-200 text-orange-700 text-xs font-semibold px-3 py-2 rounded-xl flex items-center space-x-1 hover:bg-orange-100/50 transition shadow-sm"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    <span>{copied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+
+                {/* Ordered Items Summary with Customizations */}
+                <div className="text-left border-t border-gray-100 pt-3 space-y-2 text-xs text-gray-600">
+                  <div className="font-bold text-gray-800">Items in this order:</div>
+                  {activeOrder.items.map((i, idx) => (
+                    <div key={idx} className="space-y-0.5">
+                      <div className="flex justify-between font-medium">
+                        <span>{i.qty}x {i.name}</span>
+                        <span className="font-semibold text-gray-700">₹{i.price.toFixed(2)}</span>
+                      </div>
+                      {i.chosenCustomizations.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {i.chosenCustomizations.map((tag) => (
+                            <span key={tag} className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded">
+                              ● {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-dashed border-gray-200">
+                    <span>Total Paid (Razorpay)</span>
+                    <span className="text-orange-600">₹{activeOrder.totalAmount.toFixed(2)}</span>
                   </div>
                 </div>
-                <button
-                  onClick={handleCopyOtp}
-                  className="bg-white border border-orange-200 text-orange-700 text-xs font-semibold px-3 py-2 rounded-xl flex items-center space-x-1 hover:bg-orange-100/50 transition shadow-sm"
-                >
-                  {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
-                </button>
               </div>
-
-              {/* Ordered Items Summary */}
-              <div className="text-left border-t border-gray-100 pt-3 space-y-1 text-xs text-gray-600">
-                <div className="font-bold text-gray-800 mb-1">Items in this order:</div>
-                {activeOrder.items.map((i, idx) => (
-                  <div key={idx} className="flex justify-between">
-                    <span>{i.qty}x {i.name}</span>
-                    <span className="font-semibold text-gray-700">₹{i.price.toFixed(2)}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-dashed border-gray-200">
-                  <span>Total Paid (Razorpay)</span>
-                  <span className="text-orange-600">₹{activeOrder.totalAmount.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Simulation Controls for Reviewers */}
             <div className="bg-gray-100/80 rounded-2xl p-3 text-xs space-y-2 border border-gray-200">
-              <div className="font-bold text-gray-700 flex items-center">
-                <span>Simulate Order Status:</span>
-              </div>
-              <div className="grid grid-cols-4 gap-1">
-                {['CONFIRMED', 'PREPARING', 'READY', 'COLLECTED'].map((st) => (
+              <div className="font-bold text-gray-700">Simulate Order Status:</div>
+              <div className="grid grid-cols-5 gap-1">
+                {['CONFIRMED', 'PREPARING', 'READY', 'COLLECTED', 'FORFEITED'].map((st) => (
                   <button
                     key={st}
                     onClick={() => setOrderStatus(st)}
-                    className={`py-1 rounded text-[10px] font-bold uppercase transition ${
+                    className={`py-1 rounded text-[9px] font-bold uppercase transition ${
                       orderStatus === st ? 'bg-orange-600 text-white shadow' : 'bg-white text-gray-700 hover:bg-gray-200'
                     }`}
                   >
@@ -468,7 +636,7 @@ export default function App() {
           }`}
         >
           <Utensils className="w-5 h-5 mb-0.5" />
-          Menu & Slots
+          Menu & Custom
         </button>
         <button
           onClick={() => setActiveTab('pickup')}
@@ -477,7 +645,7 @@ export default function App() {
           }`}
         >
           <QrCode className="w-5 h-5 mb-0.5" />
-          Active Pickup
+          Pickup Pass
         </button>
       </nav>
     </div>

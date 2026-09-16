@@ -98,6 +98,7 @@ export async function checkout(req, res) {
         quantity,
         unitPrice,
         subtotal,
+        customizations: Array.isArray(item.customizations) ? item.customizations : [],
       });
     }
 
@@ -133,6 +134,7 @@ export async function checkout(req, res) {
             quantity: oi.quantity,
             unitPrice: oi.unitPrice,
             subtotal: oi.subtotal,
+            customizations: oi.customizations,
           })),
         },
       },
@@ -235,6 +237,7 @@ export async function handleWebhook(req, res) {
             where: { id: order.id },
             data: {
               status: 'CONFIRMED',
+              confirmedAt: new Date(),
               razorpayPaymentId: razorpayPaymentId || order.razorpayPaymentId,
               paidAt: new Date(),
               pickupToken: {

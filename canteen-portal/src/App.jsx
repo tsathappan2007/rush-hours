@@ -507,24 +507,189 @@ export default function App() {
           {activeTab === 'orders' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-                <h2 className="text-lg font-bold text-gray-900">Incoming & Active Orders Queue</h2>
-                <span className="text-xs text-gray-500">Slot: 12:30 - 12:45 PM</span>
+                <div>
+                  <h2 className="text-lg font-black text-gray-900">Live Kitchen & Counter Tickets</h2>
+                  <p className="text-xs text-gray-500">
+                    Order state machine with 2-min student edit/cancellation grace lockout and 20-min ready forfeiture deadline
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1 rounded-full">Slot: 12:30 - 12:45 PM</span>
               </div>
 
-              <div className="border-2 border-emerald-200 bg-emerald-50/40 rounded-2xl p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <div className="font-mono font-bold text-gray-900">Order #RH-2026-001</div>
-                  <span className="text-xs font-bold uppercase bg-emerald-600 text-white px-2.5 py-1 rounded-full">
-                    READY FOR PICKUP
+              {/* Order Card 1: CONFIRMED - Locked by Grace Window */}
+              <div className="border-2 border-amber-200 bg-amber-50/40 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono font-black text-gray-900 text-base">RH-2026-002</span>
+                      <span className="text-[11px] font-black uppercase bg-amber-200 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
+                        CONFIRMED (IN GRACE WINDOW)
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">Student: Sathappan T (21CS089) • Paid ₹140.00 via Razorpay</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
+                      <Clock className="w-3.5 h-3.5 animate-spin" />
+                      <span>Grace: 48s remaining</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Items with Customizations */}
+                <div className="bg-white rounded-xl p-3.5 border border-amber-200 space-y-2.5 text-xs">
+                  <div className="font-bold text-gray-700 border-b border-gray-100 pb-1 flex justify-between">
+                    <span>Ticket Items & Customizations:</span>
+                    <span className="text-[10px] text-amber-700 font-semibold">Student can cancel/edit during grace</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-bold text-gray-900">1x South Indian Executive Thali</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded border border-rose-200">
+                            🚫 NO ONION
+                          </span>
+                          <span className="bg-orange-100 text-orange-800 text-[10px] font-black px-2 py-0.5 rounded border border-orange-200">
+                            🌶️ EXTRA SPICY
+                          </span>
+                        </div>
+                      </div>
+                      <span className="font-mono text-gray-500">₹140.00</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* State Machine Action Controls */}
+                <div className="flex items-center justify-between pt-2 border-t border-amber-200">
+                  <div className="text-[11px] text-amber-800 font-medium flex items-center space-x-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Kitchen preparation is locked until the 2-minute student grace window elapses.</span>
+                  </div>
+                  <button
+                    disabled
+                    className="bg-gray-300 text-gray-500 cursor-not-allowed font-bold text-xs px-4 py-2 rounded-xl"
+                  >
+                    Start Preparing (Locked)
+                  </button>
+                </div>
+              </div>
+
+              {/* Order Card 2: PREPARING -> Move to READY */}
+              <div className="border-2 border-blue-200 bg-blue-50/40 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono font-black text-gray-900 text-base">RH-2026-003</span>
+                      <span className="text-[11px] font-black uppercase bg-blue-200 text-blue-900 px-2.5 py-0.5 rounded-full border border-blue-300">
+                        PREPARING IN KITCHEN
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">Student: Priya R (21EC045) • Paid ₹85.00 via Razorpay</p>
+                  </div>
+                </div>
+
+                {/* Items with Customizations */}
+                <div className="bg-white rounded-xl p-3.5 border border-blue-200 space-y-2.5 text-xs">
+                  <div className="font-bold text-gray-700 border-b border-gray-100 pb-1">
+                    Ticket Items & Customizations:
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-bold text-gray-900">1x Wok Tossed Veg Hakka Noodles</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded border border-emerald-200">
+                            🧊 LESS OIL
+                          </span>
+                        </div>
+                      </div>
+                      <span className="font-mono text-gray-500">₹85.00</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* State Machine Action Controls */}
+                <div className="flex items-center justify-between pt-2 border-t border-blue-200">
+                  <div className="text-[11px] text-gray-500">
+                    Grace window completed. Moving to READY triggers the 20-minute pickup window timer.
+                  </div>
+                  <button
+                    onClick={() => alert("Order marked READY! 20-minute pickup deadline started.")}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-sm"
+                  >
+                    Mark Ready for Pickup
+                  </button>
+                </div>
+              </div>
+
+              {/* Order Card 3: READY FOR PICKUP - Active 20-min countdown */}
+              <div className="border-2 border-emerald-300 bg-emerald-50/40 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono font-black text-gray-900 text-base">RH-2026-001</span>
+                      <span className="text-[11px] font-black uppercase bg-emerald-600 text-white px-2.5 py-0.5 rounded-full shadow-xs">
+                        READY FOR PICKUP
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">Student: Hariharan K (21CS102) • Ready since 12:35 PM</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg inline-flex items-center space-x-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Pickup Deadline: 14m 12s left</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-3.5 border border-emerald-200 space-y-2 text-xs">
+                  <div className="font-bold text-gray-700 border-b border-gray-100 pb-1">
+                    Ready Items:
+                  </div>
+                  <div className="text-gray-800 space-y-1">
+                    <div className="flex justify-between font-medium">
+                      <span>1x Wok Tossed Veg Hakka Noodles</span>
+                      <span className="font-mono text-gray-500">₹65.00</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>1x Crispy Punjabi Samosa (2 pcs)</span>
+                      <span className="font-mono text-gray-500">₹35.00</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-emerald-200 text-xs">
+                  <div className="text-[11px] text-emerald-800 font-medium">
+                    Waiting for student at counter. Use <strong>Verify & Collect</strong> tab to scan QR/OTP.
+                  </div>
+                  <span className="font-mono font-bold bg-emerald-100 text-emerald-900 px-3 py-1 rounded-lg border border-emerald-300">
+                    OTP: 7492
                   </span>
                 </div>
-                <div className="text-xs text-gray-600 space-y-1">
-                  <div>1x Wok Tossed Veg Hakka Noodles</div>
-                  <div>1x Crispy Punjabi Samosa (2 pcs)</div>
+              </div>
+
+              {/* Order Card 4: FORFEITED - Exceeded 20-min deadline */}
+              <div className="border-2 border-gray-300 bg-gray-50 rounded-2xl p-5 space-y-3 opacity-80 shadow-xs">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono font-black text-gray-700 text-base">RH-2026-000</span>
+                      <span className="text-[11px] font-black uppercase bg-gray-200 text-gray-700 px-2.5 py-0.5 rounded-full border border-gray-300">
+                        FORFEITED (UNCOLLECTED)
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">Student: Vikram N (21ME032) • Expired at 12:20 PM</p>
+                  </div>
+                  <span className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                    🚨 &gt; 20 Mins Past Ready
+                  </span>
                 </div>
-                <div className="text-xs text-gray-500 pt-2 border-t border-emerald-100 flex justify-between">
-                  <span>Student: Hariharan K (21CS102)</span>
-                  <span className="font-mono font-bold text-emerald-800">OTP: 7492</span>
+                <div className="text-xs text-gray-600 bg-white p-3 rounded-xl border border-gray-200">
+                  <span>1x Chole Bhature Combo (Special Gravy)</span>
+                  <div className="text-[11px] text-gray-400 mt-1">
+                    System automatically swept and marked order as forfeited. QR/OTP token revoked.
+                  </div>
                 </div>
               </div>
             </div>
