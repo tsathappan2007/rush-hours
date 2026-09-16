@@ -1,0 +1,33 @@
+{
+  "name": "rush-hours",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Two-sided campus canteen pre-order system for college campuses",
+  "workspaces": [
+    "student-app",
+    "canteen-portal",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,STUDENT,CANTEEN\" -c \"blue,green,magenta\" \"npm run dev:server\" \"npm run dev:student\" \"npm run dev:canteen\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:student": "npm run dev --workspace=student-app",
+    "dev:canteen": "npm run dev --workspace=canteen-portal",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start --workspace=server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "keywords": [
+    "campus",
+    "canteen",
+    "food-ordering",
+    "razorpay",
+    "monorepo",
+    "react",
+    "express"
+  ],
+  "author": "Rush Hours Team",
+  "license": "MIT"
+}
