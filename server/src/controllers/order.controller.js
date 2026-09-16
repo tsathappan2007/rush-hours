@@ -331,6 +331,14 @@ export async function updateOrderStatus(req, res) {
         },
       });
 
+      // If order moves to READY, set a short pickup window (15 minutes from now)
+      if (normalizedTarget === 'READY' && order.pickupToken) {
+        await tx.pickupToken.update({
+          where: { orderId },
+          data: { expiresAt: new Date(Date.now() + 15 * 60 * 1000) },
+        });
+      }
+
       if (normalizedTarget === 'COLLECTED' && order.pickupToken) {
         await tx.pickupToken.update({
           where: { orderId },

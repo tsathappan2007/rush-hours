@@ -1,15 +1,16 @@
 import { Router } from 'express';
+import {
+  getOrderPickupDetails,
+  verifyPickup,
+} from '../controllers/pickup.controller.js';
 
 const router = Router();
 
-// Generate or fetch QR code / OTP for an order (student)
-router.get('/:orderId/qr', (req, res) => {
-  res.json({ message: `Pickup scaffold: Fetch QR/OTP for order ${req.params.orderId}` });
-});
+// Student: Fetch QR code image Data URL, 4-digit OTP, and expiry for an order
+router.get('/:orderId', getOrderPickupDetails);
+router.get('/:orderId/qr', getOrderPickupDetails); // Compatibility alias
 
-// Verify OTP or QR token (canteen staff at counter)
-router.post('/verify', (req, res) => {
-  res.json({ message: 'Pickup scaffold: Verify student QR / OTP token' });
-});
+// Canteen Staff: Scan QR or enter OTP to verify and mark collected (single-use enforced)
+router.post('/verify', verifyPickup);
 
 export default router;
