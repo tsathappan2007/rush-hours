@@ -105,16 +105,18 @@ export async function getCanteenMenu(req, res) {
           closingTime: canteen.closingTime,
           isActive: canteen.isActive,
         },
-        timeSlots: canteen.timeSlots.map((slot) => ({
-          id: slot.id,
-          slotDate: slot.slotDate,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          maxOrders: slot.maxOrders,
-          currentOrders: slot.currentOrders,
-          availableSlots: Math.max(0, slot.maxOrders - slot.currentOrders),
-          isFull: slot.currentOrders >= slot.maxOrders,
-        })),
+        // Only return slots with remaining capacity for student booking
+        timeSlots: canteen.timeSlots
+          .filter((slot) => slot.currentOrders < slot.maxOrders)
+          .map((slot) => ({
+            id: slot.id,
+            slotDate: slot.slotDate,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            maxOrders: slot.maxOrders,
+            currentOrders: slot.currentOrders,
+            availableSlots: Math.max(0, slot.maxOrders - slot.currentOrders),
+          })),
         menuByCategory,
       },
     });
@@ -202,5 +204,120 @@ export async function toggleCanteenOrders(req, res) {
   } catch (error) {
     console.error('Error toggling canteen status:', error);
     res.status(500).json({ success: false, error: 'Failed to update canteen status' });
+  }
+}
+
+/**
+ * Calculates queue-load metrics and color indicators based on capacity ratios.
+ * Green: < 60%
+ * Yellow: 60% - 85%
+ * Red: >= 85%
+ */
+export function calculateQueueLoad(currentOrders, maxOrders) {
+  if (!maxOrders || maxOrders <= 0) {
+    return { ratio: 0, percentage: 0, level: 'green', label: 'Normal' };
+  }
+  const ratio = currentOrders / maxOrders;
+  const percentage = Math.min(100, Math.round(ratio * 100));
+
+  if (ratio >= 0.85) {
+    return { ratio, percentage, level: 'red', label: ratio >= 1 ? 'Full' : 'Heavy Rush' };
+  }
+  if (ratio >= 0.60) {
+    return { ratio, percentage, level: 'yellow', label: 'Busy' };
+  }
+  return { ratio, percentage, level: 'green', label: 'Normal' };
+}
+
+/**
+ * Live canteen portal dashboard of orders per upcoming time slot with queue-load indicator.
+ * GET /api/canteens/:canteenId/slots-dashboard
+ */
+export async function getSlotsDashboard(req, res) {
+  try {
+    const { canteenId } = req.params;
+
+    const canteen = await prisma.canteen.findUnique({
+      where: { id: canteenId },
+      include: {
+        timeSlots: {
+          where: { isActive: true },
+          orderBy: [{ slotDate: 'asc' }, { startTime: 'asc' }],
+          include: {
+            orders: {
+              where: {
+                status: { in: ['CONFIRMED', 'PREPARING', 'READY'] },
+              },
+              include: {
+                orderItems: {
+                  include: {
+                    menuItem: { select: { name: true, category: true } },
+                  },
+                },
+                student: { select: { fullName: true, rollNumber: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!canteen) {
+      return res.status(404).json({ success: false, error: 'Canteen not found' });
+    }
+
+    const slots = canteen.timeSlots.map((slot) => {
+      const queueLoad = calculateQueueLoad(slot.currentOrders, slot.maxOrders);
+
+      // Aggregate kitchen batch prep counts
+      const itemCounts = {};
+      slot.orders.forEach((order) => {
+        order.orderItems.forEach((oi) => {
+          const name = oi.menuItem.name;
+          itemCounts[name] = (itemCounts[name] || 0) + oi.quantity;
+        });
+      });
+
+      const batchPrep = Object.entries(itemCounts).map(([itemName, totalQty]) => ({
+        itemName,
+        totalQty,
+      }));
+
+      return {
+        id: slot.id,
+        slotDate: slot.slotDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        maxOrders: slot.maxOrders,
+        currentOrders: slot.currentOrders,
+        availableSlots: Math.max(0, slot.maxOrders - slot.currentOrders),
+        queueLoad,
+        activeOrdersCount: slot.orders.length,
+        batchPrep,
+        orders: slot.orders.map((o) => ({
+          orderNumber: o.orderNumber,
+          status: o.status,
+          studentName: o.student.fullName,
+          rollNumber: o.student.rollNumber,
+          totalAmount: Number(o.totalAmount),
+          items: o.orderItems.map((i) => `${i.quantity}x ${i.menuItem.name}`),
+        })),
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        canteen: {
+          id: canteen.id,
+          name: canteen.name,
+          isActive: canteen.isActive,
+        },
+        slots,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching slots dashboard:', error);
+    res.status(500).json({ success: false, error: 'Failed to retrieve slots dashboard' });
   }
 }
